@@ -196,6 +196,61 @@ class AdaptiveStrategy(BaseStrategy):
         # delegate actual decision to a fresh ProbabilisticStrategy
         strat = ProbabilisticStrategy(self.dudo_threshold, self.calzo_tol)
         return strat.decide(game, player)
+    
+
+class OpponentModelStrategy(BaseStrategy):
+    """
+    Strategy that builds a simple model of each opponent's bidding aggressiveness,
+    then calls Dudo when the current bid exceeds what that opponent typically risks.
+
+    - Tracks, for each player, the average qty they bid (as a fraction of total dice).
+    - If the current bid's qty/total_dice is more than their historical average + margin,
+    we call Dudo.
+    - Otherwise, fall back to bidding toward the 50% probability point.
+    """
+    def __init__(self, margin: float = 0.1):
+        """
+        Args:
+            margin (float): extra fraction above opponent's average to trigger Dudo.
+                            (e.g. 0.1 means 10% above their norm)
+        """
+        self.margin = margin
+
+    def decide(self, game, player):
+        # 1) opening bid
+        if game.current_bid is None:
+            return ('bid', game._choose_bid())
+
+        qty, face = game.current_bid
+        total     = game.total_dice()
+        last_bidder = game.last_bidder
+
+        # 2) compute opponent's historical aggression
+        logs = game.get_log()
+        ratios = []
+        for r in logs:
+            for e in r['bids']:
+                if e['player'] == last_bidder and 'bid' in e:
+                    q, _ = e['bid']
+                    ratios.append(q / r['initial_total'] if 'initial_total' in r else q / total)
+        # if no history, fall back to balanced bidding
+        if not ratios:
+            return ('bid', game._choose_bid())
+
+        avg_ratio = sum(ratios) / len(ratios)
+
+        # 3) if current bid unusually high for that opponent → Dudo
+        if (qty / total) > (avg_ratio + self.margin):
+            return ('dudo', None)
+
+        # 4) else check basic probability for Calzo
+        p_true = game._prob_at_least(qty, face)
+        if abs(p_true - 0.5) < 0.05:
+            return ('calzo', None)
+
+        # 5) otherwise raise toward 50%
+        return ('bid', game._choose_bid())
+
 
 
 class DudoGame:
@@ -404,13 +459,23 @@ class DudoGame:
 
 
 
-    def play_game(self) -> int:
-        """Run full game until one player remains and return winner index."""
+    def play_game(self) -> tuple[int, BaseStrategy, int]:
+        """
+        Run full game until one player remains.
+
+        Returns:
+            tuple:
+              - winner_index (int): index of the winning player
+              - winner_strategy (BaseStrategy): the strategy instance they used
+              - winner_dice (int): how many dice they have left at the end
+        """
         self.reset()
         while len(self.players) > 1:
             self.play_round()
-        return self.players[0]
 
+        winner = self.players[0]
+        return winner, self.strategies[winner], self.dice_counts[winner]
+    
     def get_log(self) -> list:
         """Retrieve the detailed log of all rounds."""
         return self.log
