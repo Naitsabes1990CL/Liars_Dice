@@ -1,4 +1,4 @@
-from logic.dudo_game import DudoGame, DudoAnalytics, RandomStrategy, NoisyProbabilisticStrategy, AdaptiveStrategy
+from logic.dudo_game import DudoGame, DudoAnalytics, RandomStrategy, NoisyProbabilisticStrategy, AdaptiveStrategy, OpponentModelStrategy
 from collections import Counter
 import random
 
@@ -11,7 +11,8 @@ if __name__ == "__main__":
     strategy_classes = [
         RandomStrategy,
         NoisyProbabilisticStrategy,
-        AdaptiveStrategy
+        AdaptiveStrategy,
+        OpponentModelStrategy,
     ]
 
     # Assign a random strategy to each player
